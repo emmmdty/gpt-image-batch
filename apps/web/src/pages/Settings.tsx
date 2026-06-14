@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
-import { Save, Wifi } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Save, Wifi } from "lucide-react";
 import { getSettings, testSettingsConnection, updateSettings } from "../lib/api.js";
 import type { Settings } from "../lib/types.js";
+import { getApiKeyFieldCopy } from "../lib/settings-copy.js";
+import { cn } from "../lib/utils.js";
 import { useToast } from "../components/Toast.js";
 import { Button, Card, CardHeader, Field, Input, Select } from "../components/ui.js";
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -56,6 +59,12 @@ export function SettingsPage() {
     );
   }
 
+  const apiKeyCopy = getApiKeyFieldCopy(settings.apiKeyConfigured);
+  const apiKeyStatusClass =
+    apiKeyCopy.statusTone === "success"
+      ? "border-emerald-500/30 bg-emerald-500/14 text-emerald-200"
+      : "border-red-500/30 bg-red-500/14 text-red-200";
+
   return (
     <Card className="max-w-4xl">
       <CardHeader
@@ -63,19 +72,57 @@ export function SettingsPage() {
         subtitle="本地保存 API 和任务默认参数。API key 不会出现在日志或前端响应中。"
       />
       <div className="grid gap-5">
+        <section className="rounded-lg border border-border bg-black/10 p-4">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-white/5">
+                <KeyRound className="h-4 w-4 text-cyan-200" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">API Key</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{apiKeyCopy.helperText}</p>
+              </div>
+            </div>
+            <span
+              className={cn(
+                "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium",
+                apiKeyStatusClass,
+              )}
+            >
+              {apiKeyCopy.statusLabel}
+            </span>
+          </div>
+          <div className="grid gap-2 text-sm text-muted-foreground">
+            <label htmlFor="image-api-key">{apiKeyCopy.inputLabel}</label>
+            <div className="flex gap-2">
+              <Input
+                id="image-api-key"
+                name="image-api-key"
+                type={showApiKey ? "text" : "password"}
+                value={apiKey}
+                autoComplete="new-password"
+                spellCheck={false}
+                placeholder={apiKeyCopy.placeholder}
+                className="min-w-0 flex-1"
+                onChange={(event) => setApiKey(event.target.value)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-28 shrink-0 px-3"
+                onClick={() => setShowApiKey((value) => !value)}
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showApiKey ? "隐藏" : "显示"}
+              </Button>
+            </div>
+          </div>
+        </section>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="API Base URL">
             <Input
               value={settings.baseUrl}
               onChange={(event) => setSettings({ ...settings, baseUrl: event.target.value })}
-            />
-          </Field>
-          <Field label="API Key">
-            <Input
-              type="password"
-              value={apiKey}
-              placeholder={settings.apiKeyConfigured ? "已配置，留空则不修改" : "请输入 API Key"}
-              onChange={(event) => setApiKey(event.target.value)}
             />
           </Field>
           <Field label="Model">
