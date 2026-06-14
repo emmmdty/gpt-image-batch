@@ -35,6 +35,8 @@ corepack prepare pnpm@10.33.2 --activate
 pnpm --version
 ```
 
+双击启动器会自动准备 pnpm：先尝试 corepack，再用 npm 从 `https://registry.npmmirror.com` 安装 `pnpm@10.33.2`，最后用 `npx pnpm@10.33.2` 兜底。上面的命令主要给开发者手动排查环境时使用。
+
 ## 安装依赖
 
 ```bash
@@ -102,6 +104,7 @@ Windows：
 
 - 检查 Node.js 18+
 - 检查 corepack 和 pnpm
+- pnpm 缺失时自动从 npmmirror 下载并安装，必要时使用 npx 兜底
 - 检查 `.env` 是否存在，不打印 API key
 - 检查 `data/`、`outputs/`、`uploads/` 写入权限
 - 检查 API 和 Web 端口是否被占用

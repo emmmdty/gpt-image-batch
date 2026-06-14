@@ -1,4 +1,5 @@
 const CHINA_MIRROR_REGISTRY = "https://registry.npmmirror.com";
+const PNPM_VERSION = "10.33.2";
 const MIN_NODE_MAJOR = 18;
 const DEFAULT_WEB_PORT = 5173;
 const DEFAULT_API_PORT = 8787;
@@ -25,6 +26,10 @@ export function isUsableNodeVersion(version) {
 
 export function getDefaultRegistry() {
   return CHINA_MIRROR_REGISTRY;
+}
+
+export function getPinnedPnpmPackage() {
+  return `pnpm@${PNPM_VERSION}`;
 }
 
 export function hasFlag(args, flag) {
@@ -123,6 +128,40 @@ export function buildAccessUrls(lanAddresses, webPort, apiPort) {
 
 export function detectPackageManager(platform) {
   return platform === "win32" ? "pnpm.cmd" : "pnpm";
+}
+
+export function detectNpmCommand(platform) {
+  return platform === "win32" ? "npm.cmd" : "npm";
+}
+
+export function detectNpxCommand(platform) {
+  return platform === "win32" ? "npx.cmd" : "npx";
+}
+
+export function getCorepackPrepareArgs() {
+  return ["prepare", getPinnedPnpmPackage(), "--activate"];
+}
+
+export function getPnpmInstallArgs(registry) {
+  return ["install", "--global", getPinnedPnpmPackage(), "--registry", registry];
+}
+
+export function createPnpmRunner(platform) {
+  return { command: detectPackageManager(platform), prefixArgs: [] };
+}
+
+export function createNpxPnpmRunner(platform) {
+  return { command: detectNpxCommand(platform), prefixArgs: ["--yes", getPinnedPnpmPackage()] };
+}
+
+export function createSpawnSpec(platform, command, args) {
+  if (platform !== "win32") {
+    return { command, args };
+  }
+  return {
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", formatCommand(command, args)],
+  };
 }
 
 export function formatDuration(milliseconds) {

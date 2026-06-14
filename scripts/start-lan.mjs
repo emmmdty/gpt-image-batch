@@ -8,10 +8,15 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   buildAccessUrls,
+  createNpxPnpmRunner,
+  createPnpmRunner,
+  createSpawnSpec,
   createStageLogger,
-  detectPackageManager,
+  detectNpmCommand,
   formatCommand,
+  getCorepackPrepareArgs,
   getDefaultRegistry,
+  getPnpmInstallArgs,
   hasConfiguredEnvValue,
   hasFlag,
   isUsableNodeVersion,
@@ -23,8 +28,8 @@ import {
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const logger = createStageLogger();
 const args = process.argv.slice(2);
-const packageManager = detectPackageManager(process.platform);
 const childProcesses = new Set();
+let pnpmRunner = createPnpmRunner(process.platform);
 let shuttingDown = false;
 
 main().catch((error) => {
@@ -122,16 +127,47 @@ async function checkCorepack() {
     await runCommand("corepack", ["enable"], { quiet: true });
     logger.info("已执行 corepack enable。");
   } catch {
-    logger.warn("corepack enable 未成功。如果 pnpm 已安装，可以继续。");
+    logger.warn("corepack enable 未成功，将继续尝试自动准备 pnpm。");
   }
 
   try {
-    const result = await runCommand(packageManager, ["--version"], { quiet: true });
-    logger.success(`pnpm ${result.stdout.trim()} 可用`);
+    await runCommand("corepack", getCorepackPrepareArgs());
+    logger.info("已通过 corepack 准备 pnpm。");
   } catch {
-    throw new Error(
-      "未检测到 pnpm。请先安装 Node.js 18+，然后运行：corepack enable && corepack prepare pnpm@10.33.2 --activate",
-    );
+    logger.warn("corepack prepare 未成功，将尝试使用 npm 从国内镜像安装 pnpm。");
+  }
+
+  try {
+    const result = await runPnpm(["--version"], { quiet: true });
+    logger.success(`pnpm ${result.stdout.trim()} 可用`);
+    return;
+  } catch {
+    logger.warn("直接运行 pnpm 失败，开始自动安装 pnpm。");
+  }
+
+  await installPnpmWithNpm();
+
+  try {
+    const result = await runPnpm(["--version"], { quiet: true });
+    logger.success(`pnpm ${result.stdout.trim()} 可用`);
+    return;
+  } catch {
+    logger.warn("全局 pnpm 仍不可用，将使用 npx pnpm 兜底运行本项目。");
+  }
+
+  pnpmRunner = createNpxPnpmRunner(process.platform);
+  const result = await runPnpm(["--version"], { quiet: true });
+  logger.success(`npx pnpm ${result.stdout.trim()} 可用`);
+}
+
+async function installPnpmWithNpm() {
+  const npmCommand = detectNpmCommand(process.platform);
+  const installArgs = getPnpmInstallArgs(getDefaultRegistry());
+  logger.info(`正在自动安装 pnpm：${formatCommand(npmCommand, installArgs)}`);
+  try {
+    await runCommand(npmCommand, installArgs);
+  } catch (error) {
+    logger.warn(`npm 全局安装 pnpm 未成功：${error.message}`);
   }
 }
 
@@ -190,7 +226,7 @@ async function installDependencies(registry) {
     installArgs.push("--registry", registry);
     logger.info(`使用 registry：${registry}`);
   }
-  await runCommand(packageManager, installArgs);
+  await runPnpm(installArgs);
   logger.success("依赖已准备好");
 }
 
@@ -200,7 +236,7 @@ async function migrateDatabase() {
     return;
   }
   logger.start("初始化 SQLite 数据库");
-  await runCommand(packageManager, ["db:migrate"]);
+  await runPnpm(["db:migrate"]);
   logger.success("数据库已准备好");
 }
 
@@ -215,8 +251,8 @@ async function startServices({ apiPort, webPort }) {
     VITE_API_BASE_URL: "auto",
   };
 
-  const api = spawnProcess("API", packageManager, ["dev:api"], env);
-  const web = spawnProcess("Web", packageManager, ["dev:web"], env);
+  const api = spawnProcess("API", pnpmRunner.command, [...pnpmRunner.prefixArgs, "dev:api"], env);
+  const web = spawnProcess("Web", pnpmRunner.command, [...pnpmRunner.prefixArgs, "dev:web"], env);
 
   logger.success("服务启动命令已执行，下面会持续输出日志");
   console.log("");
@@ -248,10 +284,10 @@ async function startServices({ apiPort, webPort }) {
 
 function spawnProcess(label, command, childArgs, env) {
   console.log(`  启动 ${label}: ${formatCommand(command, childArgs)}`);
-  const child = spawn(command, childArgs, {
+  const spec = createSpawnSpec(process.platform, command, childArgs);
+  const child = spawn(spec.command, spec.args, {
     cwd: rootDir,
     env,
-    shell: process.platform === "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   childProcesses.add(child);
@@ -330,9 +366,9 @@ function runCommand(command, commandArgs, options = {}) {
     console.log(`  $ ${formatCommand(command, commandArgs)}`);
   }
   return new Promise((resolve, reject) => {
-    const child = spawn(command, commandArgs, {
+    const spec = createSpawnSpec(process.platform, command, commandArgs);
+    const child = spawn(spec.command, spec.args, {
       cwd: rootDir,
-      shell: process.platform === "win32",
       stdio: options.quiet ? ["ignore", "pipe", "pipe"] : "inherit",
       env: process.env,
     });
@@ -355,4 +391,8 @@ function runCommand(command, commandArgs, options = {}) {
       reject(new Error(`${formatCommand(command, commandArgs)} 执行失败，退出码 ${code}`));
     });
   });
+}
+
+function runPnpm(commandArgs, options = {}) {
+  return runCommand(pnpmRunner.command, [...pnpmRunner.prefixArgs, ...commandArgs], options);
 }

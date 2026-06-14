@@ -1,9 +1,15 @@
 import { describe, expect, test } from "vitest";
 import {
   buildAccessUrls,
+  createNpxPnpmRunner,
+  createPnpmRunner,
+  createSpawnSpec,
   detectPackageManager,
+  detectNpmCommand,
+  getCorepackPrepareArgs,
   formatDuration,
   getDefaultRegistry,
+  getPnpmInstallArgs,
   hasConfiguredEnvValue,
   isUsableNodeVersion,
   mergeRuntimeEnv,
@@ -56,6 +62,38 @@ describe("lan launcher core", () => {
     expect(detectPackageManager("win32")).toBe("pnpm.cmd");
     expect(detectPackageManager("darwin")).toBe("pnpm");
     expect(detectPackageManager("linux")).toBe("pnpm");
+    expect(detectNpmCommand("win32")).toBe("npm.cmd");
+    expect(detectNpmCommand("darwin")).toBe("npm");
+  });
+
+  test("builds automatic pnpm install commands with China mirror", () => {
+    expect(getCorepackPrepareArgs()).toEqual(["prepare", "pnpm@10.33.2", "--activate"]);
+    expect(getPnpmInstallArgs("https://registry.npmmirror.com")).toEqual([
+      "install",
+      "--global",
+      "pnpm@10.33.2",
+      "--registry",
+      "https://registry.npmmirror.com",
+    ]);
+  });
+
+  test("falls back from direct pnpm to npx pnpm runner", () => {
+    expect(createPnpmRunner("win32")).toEqual({ command: "pnpm.cmd", prefixArgs: [] });
+    expect(createNpxPnpmRunner("win32")).toEqual({
+      command: "npx.cmd",
+      prefixArgs: ["--yes", "pnpm@10.33.2"],
+    });
+  });
+
+  test("wraps Windows commands with cmd.exe without shell option args", () => {
+    expect(createSpawnSpec("win32", "pnpm.cmd", ["install", "--registry", "https://registry.npmmirror.com"])).toEqual({
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", "pnpm.cmd install --registry https://registry.npmmirror.com"],
+    });
+    expect(createSpawnSpec("linux", "pnpm", ["install"])).toEqual({
+      command: "pnpm",
+      args: ["install"],
+    });
   });
 
   test("lets process env override .env values for smoke tests and launch overrides", () => {
