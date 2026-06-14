@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --background: 222 28% 6%;
+  --foreground: 216 28% 92%;
+  --muted: 221 20% 15%;
+  --muted-foreground: 218 12% 67%;
+  --card: 221 24% 10%;
+  --card-foreground: 216 28% 92%;
+  --border: 220 18% 21%;
+}
+
+.light {
+  color-scheme: light;
+  --background: 220 18% 96%;
+  --foreground: 224 24% 12%;
+  --muted: 220 18% 91%;
+  --muted-foreground: 220 8% 43%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 24% 12%;
+  --border: 220 14% 84%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 74% 6%, rgba(89, 88, 255, 0.34), transparent 34rem),
+    radial-gradient(circle at 18% 12%, rgba(36, 199, 172, 0.12), transparent 24rem),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+}
+
+.glass {
+  background: linear-gradient(145deg, rgba(18, 25, 38, 0.88), rgba(13, 18, 28, 0.78));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 18px 70px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.light .glass {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12);
+}
