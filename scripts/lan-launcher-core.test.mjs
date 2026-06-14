@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildAccessUrls,
+  classifyInstallFailure,
   createNpxPnpmRunner,
   createPnpmRunner,
   createSpawnSpec,
@@ -10,6 +11,7 @@ import {
   formatDuration,
   getDefaultRegistry,
   getPnpmInstallArgs,
+  getPnpmInstallAttempts,
   hasConfiguredEnvValue,
   isUsableNodeVersion,
   mergeRuntimeEnv,
@@ -76,6 +78,42 @@ describe("lan launcher core", () => {
       "--registry",
       "https://registry.npmmirror.com",
     ]);
+  });
+
+  test("builds pnpm install retry attempts for Windows-friendly installs", () => {
+    expect(getPnpmInstallAttempts("https://registry.npmmirror.com")).toEqual([
+      {
+        label: "标准安装",
+        args: ["install", "--registry", "https://registry.npmmirror.com"],
+      },
+      {
+        label: "兼容模式安装",
+        args: [
+          "install",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "--config.node-linker=hoisted",
+        ],
+      },
+      {
+        label: "清理后强制安装",
+        args: [
+          "install",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "--force",
+          "--config.node-linker=hoisted",
+        ],
+      },
+    ]);
+  });
+
+  test("classifies native build tool failures from install output", () => {
+    expect(
+      classifyInstallFailure("better-sqlite3 install failed\nnode-gyp ERR! find VS Visual Studio not found"),
+    ).toBe("native_build_tools");
+    expect(classifyInstallFailure("ERR_PNPM_FETCH_404 package not found")).toBe("package_fetch");
+    expect(classifyInstallFailure("something unexpected")).toBe("unknown");
   });
 
   test("falls back from direct pnpm to npx pnpm runner", () => {

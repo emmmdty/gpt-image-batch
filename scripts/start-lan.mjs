@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   buildAccessUrls,
+  classifyInstallFailure,
   createNpxPnpmRunner,
   createPnpmRunner,
   createSpawnSpec,
@@ -17,6 +18,7 @@ import {
   getCorepackPrepareArgs,
   getDefaultRegistry,
   getPnpmInstallArgs,
+  getPnpmInstallAttempts,
   hasConfiguredEnvValue,
   hasFlag,
   isUsableNodeVersion,
@@ -254,13 +256,62 @@ async function installDependencies(registry) {
     return;
   }
   logger.start("安装或校验依赖");
-  const installArgs = ["install"];
-  if (registry) {
-    installArgs.push("--registry", registry);
-    logger.info(`使用 registry：${registry}`);
+  logger.info(`使用 registry：${registry}`);
+  let lastError;
+  for (const attempt of getPnpmInstallAttempts(registry)) {
+    logger.info(`开始 ${attempt.label}。`);
+    try {
+      await runPnpm(attempt.args);
+      logger.success("依赖已准备好");
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(`${attempt.label} 失败：${error.message}`);
+      if (attempt.label === "兼容模式安装") {
+        removeInstallArtifacts();
+      }
+    }
   }
-  await runPnpm(installArgs);
-  logger.success("依赖已准备好");
+  throw createInstallFailureError(lastError);
+}
+
+function removeInstallArtifacts() {
+  logger.info("正在清理 node_modules，准备重试。");
+  fs.rmSync(path.join(rootDir, "node_modules"), { recursive: true, force: true });
+  for (const workspacePath of ["apps/api", "apps/web", "packages/core", "packages/db"]) {
+    fs.rmSync(path.join(rootDir, workspacePath, "node_modules"), { recursive: true, force: true });
+  }
+}
+
+function createInstallFailureError(error) {
+  const output = `${error?.stdout ?? ""}\n${error?.stderr ?? ""}\n${error?.message ?? ""}`;
+  const failureType = classifyInstallFailure(output);
+  if (failureType === "native_build_tools") {
+    return new Error(
+      [
+        "依赖安装失败，原因看起来是 Windows native 编译工具缺失或 better-sqlite3 编译失败。",
+        "请安装 Visual Studio Build Tools 2022，并勾选“使用 C++ 的桌面开发”。",
+        "安装完成后重新双击 start-lan.cmd。",
+        `最后失败命令：${error?.commandText ?? "pnpm install"}`,
+      ].join("\n"),
+    );
+  }
+  if (failureType === "package_fetch") {
+    return new Error(
+      [
+        "依赖安装失败，原因看起来是网络或 registry 拉包失败。",
+        "启动器已使用 npmmirror 并重试多次。请检查代理、防火墙或网络后重新双击 start-lan.cmd。",
+        `最后失败命令：${error?.commandText ?? "pnpm install"}`,
+      ].join("\n"),
+    );
+  }
+  return new Error(
+    [
+      "依赖安装失败，启动器已尝试标准安装、兼容模式安装和清理后强制安装。",
+      "请查看上方 pnpm 输出中的第一条 ERR 或 node-gyp 错误。",
+      `最后失败命令：${error?.commandText ?? "pnpm install"}`,
+    ].join("\n"),
+  );
 }
 
 async function migrateDatabase() {
@@ -402,26 +453,36 @@ function runCommand(command, commandArgs, options = {}) {
     const spec = createSpawnSpec(process.platform, command, commandArgs);
     const child = spawn(spec.command, spec.args, {
       cwd: rootDir,
-      stdio: options.quiet ? ["ignore", "pipe", "pipe"] : "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     });
     let stdout = "";
     let stderr = "";
-    if (options.quiet) {
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-    }
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (!options.quiet) {
+        process.stdout.write(text);
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (!options.quiet) {
+        process.stderr.write(text);
+      }
+    });
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) {
         resolve({ stdout, stderr });
         return;
       }
-      reject(new Error(`${formatCommand(command, commandArgs)} 执行失败，退出码 ${code}`));
+      const error = new Error(`${formatCommand(command, commandArgs)} 执行失败，退出码 ${code}`);
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.commandText = formatCommand(command, commandArgs);
+      reject(error);
     });
   });
 }

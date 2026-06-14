@@ -170,6 +170,46 @@ export function getPnpmInstallArgs(registry) {
   return ["install", "--global", getPinnedPnpmPackage(), "--registry", registry];
 }
 
+export function getPnpmInstallAttempts(registry) {
+  return [
+    {
+      label: "标准安装",
+      args: ["install", "--registry", registry],
+    },
+    {
+      label: "兼容模式安装",
+      args: ["install", "--registry", registry, "--config.node-linker=hoisted"],
+    },
+    {
+      label: "清理后强制安装",
+      args: ["install", "--registry", registry, "--force", "--config.node-linker=hoisted"],
+    },
+  ];
+}
+
+export function classifyInstallFailure(output) {
+  const normalized = String(output).toLowerCase();
+  if (
+    normalized.includes("node-gyp") ||
+    normalized.includes("visual studio") ||
+    normalized.includes("msbuild") ||
+    normalized.includes("better-sqlite3") ||
+    normalized.includes("python is not set")
+  ) {
+    return "native_build_tools";
+  }
+  if (
+    normalized.includes("err_pnpm_fetch") ||
+    normalized.includes("fetch") ||
+    normalized.includes("404") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("etimedout")
+  ) {
+    return "package_fetch";
+  }
+  return "unknown";
+}
+
 export function createPnpmRunner(platform) {
   return { command: detectPackageManager(platform), prefixArgs: [] };
 }
