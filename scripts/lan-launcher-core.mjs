@@ -48,6 +48,30 @@ export function resolvePorts(env) {
   };
 }
 
+export function planAvailablePorts(requestedPorts, isPortAvailable, maxAttempts = 50) {
+  const apiPort = findAvailablePort(requestedPorts.apiPort, isPortAvailable, new Set(), maxAttempts);
+  const webPort = findAvailablePort(
+    requestedPorts.webPort,
+    isPortAvailable,
+    new Set([apiPort]),
+    maxAttempts,
+  );
+  return { apiPort, webPort };
+}
+
+function findAvailablePort(startPort, isPortAvailable, reservedPorts, maxAttempts) {
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const candidate = startPort + offset;
+    if (candidate > 65_535) {
+      break;
+    }
+    if (!reservedPorts.has(candidate) && isPortAvailable(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error(`无法从端口 ${startPort} 开始找到可用端口。`);
+}
+
 export function mergeRuntimeEnv(fileEnv, processEnv) {
   return { ...fileEnv, ...processEnv };
 }

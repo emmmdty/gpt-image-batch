@@ -21,6 +21,7 @@ import {
   hasFlag,
   isUsableNodeVersion,
   mergeRuntimeEnv,
+  planAvailablePorts,
   resolvePorts,
   selectLanAddresses,
 } from "./lan-launcher-core.mjs";
@@ -56,10 +57,10 @@ async function main() {
   await checkCorepack();
   await checkWritableDirectories();
   await ensureEnvFile(envText);
-  await ensurePortsAvailable(ports);
+  const availablePorts = await resolveAvailablePorts(ports);
   await installDependencies(registry);
   await migrateDatabase();
-  await startServices(ports);
+  await startServices(availablePorts);
 }
 
 function printBanner() {
@@ -208,11 +209,43 @@ async function ensureEnvFile(envText) {
   logger.success("配置检查完成");
 }
 
-async function ensurePortsAvailable({ apiPort, webPort }) {
+async function resolveAvailablePorts(requestedPorts) {
   logger.start("检查端口占用");
-  await assertPortAvailable(apiPort, "API");
-  await assertPortAvailable(webPort, "Web");
-  logger.success(`端口可用：API ${apiPort}，Web ${webPort}`);
+  const availability = new Map();
+  for (const port of candidatePortsFor(requestedPorts)) {
+    availability.set(port, await isPortAvailable(port));
+  }
+  const planned = planAvailablePorts(requestedPorts, (port) => {
+    if (!availability.has(port)) {
+      throw new Error(`端口 ${port} 尚未完成可用性检查。`);
+    }
+    return availability.get(port);
+  });
+  if (planned.apiPort !== requestedPorts.apiPort) {
+    logger.warn(`API 端口 ${requestedPorts.apiPort} 已被占用，已自动改用 ${planned.apiPort}。`);
+  } else {
+    logger.info(`API 端口 ${planned.apiPort} 可用。`);
+  }
+  if (planned.webPort !== requestedPorts.webPort) {
+    logger.warn(`Web 端口 ${requestedPorts.webPort} 已被占用，已自动改用 ${planned.webPort}。`);
+  } else {
+    logger.info(`Web 端口 ${planned.webPort} 可用。`);
+  }
+  logger.success(`端口已确定：API ${planned.apiPort}，Web ${planned.webPort}`);
+  return planned;
+}
+
+function candidatePortsFor({ apiPort, webPort }, maxAttempts = 50) {
+  const ports = new Set();
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    if (apiPort + offset <= 65_535) {
+      ports.add(apiPort + offset);
+    }
+    if (webPort + offset <= 65_535) {
+      ports.add(webPort + offset);
+    }
+  }
+  return ports;
 }
 
 async function installDependencies(registry) {
@@ -344,18 +377,18 @@ function installSignalHandlers() {
   process.once("SIGTERM", stop);
 }
 
-function assertPortAvailable(port, label) {
+function isPortAvailable(port) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", (error) => {
       if (error.code === "EADDRINUSE") {
-        reject(new Error(`${label} 端口 ${port} 已被占用。请关闭占用程序，或在 .env 中修改端口。`));
+        resolve(false);
         return;
       }
       reject(error);
     });
     server.once("listening", () => {
-      server.close(() => resolve());
+      server.close(() => resolve(true));
     });
     server.listen(port, "0.0.0.0");
   });

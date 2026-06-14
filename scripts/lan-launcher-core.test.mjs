@@ -13,6 +13,7 @@ import {
   hasConfiguredEnvValue,
   isUsableNodeVersion,
   mergeRuntimeEnv,
+  planAvailablePorts,
   resolvePorts,
   selectLanAddresses,
 } from "./lan-launcher-core.mjs";
@@ -103,6 +104,21 @@ describe("lan launcher core", () => {
     });
 
     expect(resolvePorts(env)).toEqual({ apiPort: 18878, webPort: 15173 });
+  });
+
+  test("plans next available ports when defaults are occupied", () => {
+    const occupied = new Set([8787, 8788, 5173]);
+    expect(planAvailablePorts({ apiPort: 8787, webPort: 5173 }, (port) => !occupied.has(port))).toEqual({
+      apiPort: 8789,
+      webPort: 5174,
+    });
+  });
+
+  test("keeps API and Web on different ports when starting values overlap", () => {
+    expect(planAvailablePorts({ apiPort: 8787, webPort: 8787 }, () => true)).toEqual({
+      apiPort: 8787,
+      webPort: 8788,
+    });
   });
 
   test("formats durations for Chinese progress output", () => {
